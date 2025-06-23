@@ -1,0 +1,68 @@
+buildscript {
+    configurations.classpath {
+        resolutionStrategy.activateDependencyLocking()
+    }
+}
+
+plugins {
+    id 'java'
+    id 'maven-publish'
+    id 'io.spring.dependency-management' version '1.1.5'
+    id 'org.springframework.boot' version '3.5.0' apply false
+}
+
+group 'com.traveloka.bei.kafkastreams.common'
+version '1.0.0-SNAPSHOT'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+// Need to publish to local repo using below command:
+// ./gradlew publishToMavenLocal
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+        }
+    }
+
+    repositories {
+        mavenLocal()  // This tells Gradle to publish to your local Maven cache (~/.m2)
+    }
+}
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
+
+// Define consistent versions for Spring and Kafka related dependencies
+ext {
+    kafkaVersion = '4.0.0'
+    lombokVersion = '1.18.38'
+    jacksonVersion = '2.19.0'
+}
+
+dependencies {
+    // Spring Context for @Configuration, @Service, @Value etc.
+    implementation "org.springframework:spring-context:6.2.8"
+
+    // Spring Kafka and Apache Kafka Streams
+    implementation "org.springframework.kafka:spring-kafka:3.3.6"
+    implementation "org.apache.kafka:kafka-streams:${kafkaVersion}"
+
+    // For JSON serialization/deserialization of config and POJOs
+    implementation "com.fasterxml.jackson.core:jackson-databind:${jacksonVersion}"
+    implementation "com.fasterxml.jackson.core:jackson-core:${jacksonVersion}"
+    implementation "com.fasterxml.jackson.core:jackson-annotations:${jacksonVersion}"
+
+    // Lombok for boilerplate reduction
+    compileOnly "org.projectlombok:lombok:${lombokVersion}"
+    annotationProcessor "org.projectlombok:lombok:${lombokVersion}"
+
+    // Logging
+    implementation "org.slf4j:slf4j-api:2.0.13"
+
+}
