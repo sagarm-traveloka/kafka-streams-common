@@ -1,4 +1,4 @@
-package com.traveloka.common.kafkastreams.config;
+package com.common.kafkastreams.config;
 
 import lombok.Data;
 import java.util.List;

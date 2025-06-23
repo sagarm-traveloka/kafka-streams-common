@@ -1,4 +1,4 @@
-package com.traveloka.common.kafkastreams.serdes;
+package com.common.kafkastreams.serdes;
 
 
 import com.fasterxml.jackson.databind.ObjectMapper;

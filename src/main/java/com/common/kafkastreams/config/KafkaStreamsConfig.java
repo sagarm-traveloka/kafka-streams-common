@@ -1,4 +1,4 @@
-package com.traveloka.common.kafkastreams.config;
+package com.common.kafkastreams.config;
 
 
 import lombok.extern.slf4j.Slf4j;

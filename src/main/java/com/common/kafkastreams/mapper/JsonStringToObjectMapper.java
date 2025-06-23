@@ -1,4 +1,4 @@
-package com.traveloka.common.kafkastreams.mapper;
+package com.common.kafkastreams.mapper;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;

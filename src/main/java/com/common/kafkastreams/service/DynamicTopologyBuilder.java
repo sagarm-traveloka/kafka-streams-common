@@ -1,12 +1,11 @@
-package com.traveloka.common.kafkastreams.service;
+package com.common.kafkastreams.service;
 
-import com.traveloka.common.kafkastreams.config.AggregationDefinition;
-import com.traveloka.common.kafkastreams.serdes.SerdeFactory;
+import com.common.kafkastreams.config.AggregationDefinition;
+import com.common.kafkastreams.serdes.SerdeFactory;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.kstream.*;
-import org.apache.kafka.streams.state.Stores;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 

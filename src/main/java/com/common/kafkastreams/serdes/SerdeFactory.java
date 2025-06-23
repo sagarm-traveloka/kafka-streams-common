@@ -1,4 +1,4 @@
-package com.traveloka.common.kafkastreams.serdes;
+package com.common.kafkastreams.serdes;
 
 import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.common.serialization.Serdes;
