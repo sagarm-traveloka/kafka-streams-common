@@ -20,7 +20,7 @@ public class TopicProvisioner {
     private String bootstrapServers;
 
     public void provisionTopic(AggregationDefinition.OutputTopicConfig topicConfig) {
-        if (!topicConfig.isEnabled() || topicConfig.getName() == null) {
+        if (!topicConfig.isEnabled() || topicConfig.toTopicConfig().getName() == null) {
             return;
         }
 
@@ -29,7 +29,7 @@ public class TopicProvisioner {
 
         try (AdminClient adminClient = AdminClient.create(props)) {
             NewTopic newTopic = new NewTopic(
-                    topicConfig.getName(),
+                    topicConfig.toTopicConfig().getName(),
                     topicConfig.getPartitions() != null ? topicConfig.getPartitions() : 3, // Default partitions
                     topicConfig.getReplicationFactor() != null ? topicConfig.getReplicationFactor() : (short) 1 // Default RF
             );
@@ -44,12 +44,12 @@ public class TopicProvisioner {
 
             adminClient.createTopics(Collections.singletonList(newTopic)).all().get();
             log.info("Topic '{}' provisioned/ensured successfully with retention: {} ms",
-                    topicConfig.getName(), topicConfig.getRetentionMs() == -1 ? "compact" : topicConfig.getRetentionMs());
+                    topicConfig.toTopicConfig().getName(), topicConfig.getRetentionMs() == -1 ? "compact" : topicConfig.getRetentionMs());
         } catch (InterruptedException | ExecutionException e) {
             if (e.getCause() instanceof org.apache.kafka.common.errors.TopicExistsException) {
-                log.info("Topic '{}' already exists. Skipping creation.", topicConfig.getName());
+                log.info("Topic '{}' already exists. Skipping creation.", topicConfig.toTopicConfig().getName());
             } else {
-                log.error("Failed to provision topic '{}'", topicConfig.getName(), e);
+                log.error("Failed to provision topic '{}'", topicConfig.toTopicConfig().getName(), e);
             }
         }
     }

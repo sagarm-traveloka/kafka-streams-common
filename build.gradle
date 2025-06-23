@@ -52,6 +52,7 @@ dependencies {
     // Spring Kafka and Apache Kafka Streams
     implementation "org.springframework.kafka:spring-kafka:3.3.6"
     implementation "org.apache.kafka:kafka-streams:${kafkaVersion}"
+    implementation 'org.apache.commons:commons-lang3:3.12.0'
 
     // For JSON serialization/deserialization of config and POJOs
     implementation "com.fasterxml.jackson.core:jackson-databind:${jacksonVersion}"

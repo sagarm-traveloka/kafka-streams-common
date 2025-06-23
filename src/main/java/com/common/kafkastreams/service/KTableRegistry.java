@@ -3,6 +3,7 @@ package com.common.kafkastreams.service;
 import com.common.kafkastreams.config.AggregationDefinition;
 import com.common.kafkastreams.serdes.SerdeFactory;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.kstream.Consumed;
@@ -40,20 +41,18 @@ public class KTableRegistry {
     public KTable<Object, Object> getOrCreateKTable(StreamsBuilder streamsBuilder, AggregationDefinition.TopicConfig topicConfig) {
         return registeredKTables.computeIfAbsent(topicConfig.getName(), topicName -> {
             // This lambda is executed ONLY if the KTable for topicName is not already in the map
-            Serde<Object> keySerde = SerdeFactory.createSerde(topicConfig.getKeyClass());
-            Serde<Object> valueSerde = SerdeFactory.createSerde(topicConfig.getValueClass());
+            Pair<Serde<Object>, Serde<Object>> serdes = SerdeFactory.createSerdesFromTopicConfig(topicConfig);
 
             log.info("Creating KTable for topic and registering to avoid duplicate KTable: {}", topicName);
             // Create and return a new KTable for this topic. This is where the actual materialization happens.
-            return streamsBuilder.table(topicName, Consumed.with(keySerde, valueSerde));
+            return streamsBuilder.table(topicName, Consumed.with(serdes.getLeft(), serdes.getRight()));
         });
     }
 
     public GlobalKTable<Object, Object> getOrCreateGlobalKTable(StreamsBuilder streamsBuilder, AggregationDefinition.TopicConfig topicConfig) {
         return registeredGlobalKTables.computeIfAbsent(topicConfig.getName(), topicName -> {
-            Serde<Object> keySerde = SerdeFactory.createSerde(topicConfig.getKeyClass());
-            Serde<Object> valueSerde = SerdeFactory.createSerde(topicConfig.getValueClass());
-            return streamsBuilder.globalTable(topicName, Consumed.with(keySerde, valueSerde));
+            Pair<Serde<Object>, Serde<Object>> serdes = SerdeFactory.createSerdesFromTopicConfig(topicConfig);
+            return streamsBuilder.globalTable(topicName, Consumed.with(serdes.getLeft(), serdes.getRight()));
         });
     }
 }
