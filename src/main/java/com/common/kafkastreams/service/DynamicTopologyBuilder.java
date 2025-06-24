@@ -11,6 +11,7 @@ import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.kstream.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import java.util.Map;
 
 
 @Service
@@ -140,30 +141,35 @@ public class DynamicTopologyBuilder {
             // Build the 'right-hand' KTable for the current join step
             KTable<Object, Object> enrichmentKTable = kTableRegistry.getOrCreateKTable(streamsBuilder, joinOp.getEnrichmentTopic());
 
-            if (joinOp.getOutputFieldsMapping() == null || joinOp.getOutputPojoClass() == null) {
+            if (joinOp.getOutputFieldsMapping() == null || joinOp.getOutputFieldsMapping().isEmpty()) {
                 throw new IllegalArgumentException("For dynamic join, 'outputFieldsMapping' and 'outputPojoClass' must be provided in joinOperationConfig for ID: " + joinOp.getId());
             }
 
-            // The ValueJoiner will output the specified outputPojoClass
-            ValueJoiner<Object, Object, Object> valueJoiner =
-                    new DynamicPojoValueJoiner<>(joinOp.getOutputFieldsMapping(), joinOp.getOutputPojoClass());
+            // The V_OUT generic for ValueJoiner will now be Map<String, Object>
+            ValueJoiner<Object, Object, Map<String, Object>> valueJoiner =
+                    new DynamicPojoValueJoiner<>(joinOp.getOutputFieldsMapping()); // Removed outputPojoClass parameter
 
-
-            // Perform the join based on whether the 'left-hand' side is currently a KStream or KTable
-            if (currentKStream != null) { // If the chain is currently KStream-based
+            if (currentKStream != null) {
                 if (joinOp.getType() == AggregationDefinition.JoinType.LEFT_JOIN) {
-                    currentKStream = currentKStream.leftJoin(enrichmentKTable, valueJoiner);
-                } else { // INNER_JOIN
-                    currentKStream = currentKStream.join(enrichmentKTable, valueJoiner);
+                    // Note: The KStream's value type will become Map<String, Object> here
+                    log.info("Performing LEFT JOIN on KStream with enrichment KTable for ID: {} and with map: {}", aggDef.getId(), valueJoiner.toString());
+                    currentKStream = currentKStream.leftJoin(enrichmentKTable, valueJoiner)
+                            .mapValues((key, value) -> (Object) value); // Cast Map to Object for KStream<Object, Object>
+                } else {
+                    currentKStream = currentKStream.join(enrichmentKTable, valueJoiner)
+                            .mapValues((key, value) -> (Object) value); // Cast Map to Object for KStream<Object, Object>
                 }
-                log.debug("Current chain state after join step {}: KStream<Object, Object>", (i + 1));
-            } else if (currentKTable != null) { // If the chain is currently KTable-based
+                log.debug("Current chain state after join step {}: KStream<Object, Map<String, Object>>", (i + 1)); // Log changed type
+            } else if (currentKTable != null) {
                 if (joinOp.getType() == AggregationDefinition.JoinType.LEFT_JOIN) {
-                    currentKTable = currentKTable.leftJoin(enrichmentKTable, valueJoiner);
-                } else { // INNER_JOIN
-                    currentKTable = currentKTable.join(enrichmentKTable, valueJoiner);
+                    // Note: The KTable's value type will become Map<String, Object> here
+                    currentKTable = currentKTable.leftJoin(enrichmentKTable, valueJoiner)
+                            .mapValues(value -> (Object) value); // Cast Map to Object for KTable<Object, Object>
+                } else {
+                    currentKTable = currentKTable.join(enrichmentKTable, valueJoiner)
+                            .mapValues(value -> (Object) value); // Cast Map to Object for KTable<Object, Object>
                 }
-                log.debug("Current chain state after join step {}: KTable<Object, Object>", (i + 1));
+                log.debug("Current chain state after join step {}: KTable<Object, Map<String, Object>>", (i + 1)); // Log changed type
             } else {
                 throw new IllegalStateException("Neither KStream nor KTable initialized for join chain for ID: " + aggDef.getId());
             }

@@ -77,7 +77,7 @@ public class AggregationDefinition {
         // This list defines how fields from the left and right inputs are mapped to the output POJO.
         private List<JoinFieldMapping> outputFieldsMapping;
         // The Fully Qualified Name of the POJO class that this ValueJoiner should produce.
-        private String outputPojoClass;
+//        private String outputPojoClass;
         // private String valueJoinerClass;    // FQN of ValueJoiner for this specific step.
         // Its input types must match the previous step's output and the enrichmentTopic's value.
     }
