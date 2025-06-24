@@ -5,12 +5,14 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
 import com.fasterxml.jackson.databind.ObjectWriter;
+//import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.serialization.Deserializer;
 import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.serialization.Serializer;
 import org.apache.commons.lang3.tuple.Pair;
+import org.springframework.kafka.support.serializer.JsonSerde;
 
 import java.io.IOException;
 import java.util.Map;
@@ -24,6 +26,7 @@ public class SerdeFactory {
     static {
         // Configure ObjectMapper once for all Serdes.
         // Example configurations (uncomment as needed):
+//        OBJECT_MAPPER.registerModule(new JavaTimeModule()); // Register Java Time module for Date/Time API
          OBJECT_MAPPER.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false); // Ignore unknown fields in JSON
         // OBJECT_MAPPER.findAndRegisterModules(); // Register modules for Java 8 Date/Time API, etc.
     }
@@ -44,8 +47,12 @@ public class SerdeFactory {
     @SuppressWarnings("unchecked")
     public static <T> Serde<T> createSerde(Class<T> dataClass) {
         if (dataClass == null) {
-            log.warn("Attempted to create Serde for null dataClass. Returning Serdes.Bytes().");
-            return (Serde<T>) Serdes.Bytes(); // Fallback or throw IllegalArgumentException
+            log.info("Creating generic JSON Serde for type Object (will deserialize to Map<String, Object> for JSON objects).");
+            // If type is null, default to Object.class for generic JSON handling.
+            // Jackson will deserialize JSON objects into LinkedHashMap<String, Object>
+            // when target type is Object.class.
+//            return (Serde<T>) new JsonSerde<>(OBJECT_MAPPER, Object.class, true); // true for addTrustedPackages
+            return new JsonSerde<>(Object.class, OBJECT_MAPPER);
         }
 
         // Handle common Java types with built-in Serdes
@@ -64,9 +71,14 @@ public class SerdeFactory {
         }
         // Add other primitive/standard types as needed (e.g., Boolean, Float, UUID)
 
-        // For any other class, assume it's a custom POJO that needs JSON serialization/deserialization
-        log.info("Creating JSON POJO Serde for custom class: {}", dataClass.getName());
-        return new JsonPojoSerde<>(dataClass);
+//        // For any other class, assume it's a custom POJO that needs JSON serialization/deserialization
+//        log.info("Creating JSON POJO Serde for custom class: {}", dataClass.getName());
+//        return new JsonPojoSerde<>(dataClass);
+        // ... add other primitive type Serdes if needed ...
+        else {
+            log.info("Creating JSON Serde for specific POJO type: {}", dataClass.getName());
+            return new JsonSerde<>(dataClass, OBJECT_MAPPER);
+        }
     }
 
     // --- Inner Classes for JSON POJO Serde Implementation ---
@@ -212,10 +224,16 @@ public class SerdeFactory {
     public static Pair<Serde<Object>, Serde<Object>> createSerdesFromTopicConfig(AggregationDefinition.TopicConfig topicConfig) {
         Class<?> keyClass;
         Class<?> valueClass;
-
         try {
+            if(topicConfig.getKeyClass() == null)
+                throw new IllegalArgumentException("Key class must be specified in TopicConfig");
             keyClass = Class.forName(topicConfig.getKeyClass());
-            valueClass = Class.forName(topicConfig.getValueClass());
+//            valueClass = Class.forName(topicConfig.getValueClass());
+            // For output, if valueClass is not specified, output as Object (which will be Map<String,Object>)
+            valueClass = topicConfig.getValueClass() != null ?
+                    Class.forName(topicConfig.getValueClass()) :
+                    Object.class; // Default to Object.class if not specified
+
         } catch (ClassNotFoundException e) {
             log.error("Failed to find class for topic config: keyClass={}, valueClass={}", topicConfig.getKeyClass(), topicConfig.getValueClass(), e);
             throw new RuntimeException("Failed to load class from topic config", e);

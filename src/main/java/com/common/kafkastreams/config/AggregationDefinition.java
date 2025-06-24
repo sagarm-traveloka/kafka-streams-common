@@ -49,7 +49,7 @@ public class AggregationDefinition {
     public static class TopicConfig {
         private String name;
         private String keyClass="java.lang.String";   // Fully Qualified Name of the key class
-        private String valueClass; // Fully Qualified Name of the value class (e.g., "com.service.kakfastreams.orders.model.Order")
+        private String valueClass; // This is optional...If set then set it Fully Qualified Name (e.g., "com.service.kakfastreams.orders.model.Order")
     }
 
     // Configuration for a single step in a join chain
@@ -113,7 +113,7 @@ public class AggregationDefinition {
     public static class OutputTopicConfig {
         private boolean enabled;
         private String name;
-        private String keyClass;
+        private String keyClass="java.lang.String"; // Fully Qualified Name of the key class
         private String valueClass;
         private long retentionMs;
         private Integer partitions;
