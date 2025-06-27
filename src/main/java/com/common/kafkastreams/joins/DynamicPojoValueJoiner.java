@@ -40,6 +40,7 @@ public class DynamicPojoValueJoiner<V_LEFT, V_RIGHT> implements ValueJoiner<V_LE
         Map<String, Object> leftMap = (leftValue != null) ? objectMapper.convertValue(leftValue, Map.class) : null;
         Map<String, Object> rightMap = (rightValue != null) ? objectMapper.convertValue(rightValue, Map.class) : null;
 
+        log.info("========== Applying DynamicPojoValueJoiner with leftValue: {}, rightValue: {} ==================== ", leftValue, rightValue);
         for (AggregationDefinition.JoinFieldMapping mapping : outputFieldsMapping) {
             Map<String, Object> sourceMap = null;
             if (mapping.getSource() == AggregationDefinition.JoinFieldMapping.Source.LEFT) {
