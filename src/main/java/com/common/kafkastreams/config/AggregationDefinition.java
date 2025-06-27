@@ -22,7 +22,7 @@ public class AggregationDefinition {
 
     // --- Aggregation Specific Configuration (for AGGREGATION mode) ---
 //    private String groupByKeyExtractorClass; // FQN of KeyValueMapper for grouping
-    private KeyExtractionConfig groupByKeyExtraction;
+    private String groupByKeyExtraction;
     private String groupByKeyType;           // FQN of the type produced by groupByKeyExtractorClass
     private String stateStoreName;           // Name for the materialized state store (e.g., for KTable)
 
@@ -41,15 +41,20 @@ public class AggregationDefinition {
 
     public enum JoinType {
         LEFT_JOIN,
-        INNER_JOIN
+        INNER_JOIN,
         // Add other join types as Kafka Streams supports them, e.g., OUTER_JOIN if needed
     }
 
     @Data
     public static class TopicConfig {
         private String name;
-        private String keyClass="java.lang.String";   // Fully Qualified Name of the key class
-        private String valueClass; // This is optional...If set then set it Fully Qualified Name (e.g., "com.service.kakfastreams.orders.model.Order")
+        // Removed keyClass and valueClass,
+//        private String keyClass="java.lang.String";
+//        private String valueClass;
+        // NEW: Configuration for extracting key from message value
+        private String keyFromValueExtractorClass; // FQN of the KeyValueMapper class to extract key from value
+        private String keyFromValueExtractionConfig; // Configuration string for the extractor (e.g., JSON path)
+
     }
 
     // Configuration for a single step in a join chain
@@ -63,15 +68,17 @@ public class AggregationDefinition {
         // This is always the 'right-hand side' for the join operation.
         private TopicConfig enrichmentTopic;
 
-        // NEW: Flag to indicate if the *initial source* for this specific join operation is a KStream.
+        // Flag to indicate if the *initial source* for this specific join operation is a KStream.
         // This flag is primarily relevant for the *first* JoinOperationConfig in the list for JOIN_CHAIN mode.
         // If true, the sourceTopic is treated as a KStream for this join step.
         // If false (or absent), the sourceTopic (or previous join result) is treated as a KTable.
         private boolean initialSourceIsStream = false; // Default to false (KTable-like source for chaining)
 
-        // NEW: Relevant only if initialSourceIsStream is true for the FIRST joinOperationConfig.
+        // Relevant only if initialSourceIsStream is true for the FIRST joinOperationConfig.
         // This re-keys the initial KStream before its first join.
-        private KeyExtractionConfig primaryKeyExtraction;
+//        private KeyExtractionConfig primaryKeyExtraction;
+
+        private String valueJoinerClass; // Optional: FQN of the ValueJoiner class to use for this join step.
 
         // --- NEW: Configuration for dynamic ValueJoiner ---
         // This list defines how fields from the left and right inputs are mapped to the output POJO.
@@ -99,15 +106,15 @@ public class AggregationDefinition {
     /**
      * Defines how to extract a new key from either the existing key or the value.
      */
-    @Data
-    public static class KeyExtractionConfig {
-        public enum Source {
-            KEY, VALUE
-        }
-        private Source source;          // Indicates whether to extract from the 'KEY' or 'VALUE'
-        private String fieldName;       // The name of the field to extract from the source (if source is VALUE)
-        // If source is KEY, this field can be null/ignored, or specify 'value' to use the key directly.
-    }
+//    @Data
+//    public static class KeyExtractionConfig {
+//        public enum Source {
+//            KEY, VALUE
+//        }
+//        private Source source;          // Indicates whether to extract from the 'KEY' or 'VALUE'
+//        private String fieldName;       // The name of the field to extract from the source (if source is VALUE)
+//        // If source is KEY, this field can be null/ignored, or specify 'value' to use the key directly.
+//    }
 
     @Data
     public static class OutputTopicConfig {
@@ -123,8 +130,8 @@ public class AggregationDefinition {
         public TopicConfig toTopicConfig() {
             TopicConfig topicConfig = new TopicConfig();
             topicConfig.setName(name);
-            topicConfig.setKeyClass(keyClass);
-            topicConfig.setValueClass(valueClass);
+//            topicConfig.setKeyClass(keyClass);
+//            topicConfig.setValueClass(valueClass);
             return topicConfig;
         }
     }

@@ -4,6 +4,9 @@ import com.common.kafkastreams.config.AggregationDefinition;
 import com.common.kafkastreams.joins.DynamicPojoValueJoiner;
 import com.common.kafkastreams.mapper.DynamicPojoKeyExtractor;
 import com.common.kafkastreams.serdes.SerdeFactory;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.serialization.Serde;
@@ -11,6 +14,7 @@ import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.kstream.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import java.util.List;
 import java.util.Map;
 
 
@@ -18,11 +22,17 @@ import java.util.Map;
 @Slf4j
 public class DynamicTopologyBuilder {
 
-//    @Autowired
-//    private StreamsBuilder streamsBuilder;
-
     @Autowired
     private KTableRegistry kTableRegistry;
+
+    private final ObjectMapper objectMapper; // Add ObjectMapper instance
+
+    public DynamicTopologyBuilder() {
+        this.objectMapper = new ObjectMapper();
+        this.objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false); // Ignore unknown fields in JSON
+        this.objectMapper.configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false);
+    }
+
 
     @SuppressWarnings("unchecked")
     public void buildAggregationTopology(StreamsBuilder streamsBuilder, AggregationDefinition aggDef) throws ClassNotFoundException {
@@ -36,7 +46,7 @@ public class DynamicTopologyBuilder {
                 break;
             case AGGREGATION:
                 // Start with KStream from sourceTopic for aggregations
-                KStream<Object, Object> aggSourceStream = createKStreamFromTopicConfig(streamsBuilder, aggDef.getSourceTopic());
+                KStream<Object, Object> aggSourceStream = kTableRegistry.createAndConfigureKStream(streamsBuilder, aggDef.getSourceTopic());
 
                 if (aggDef.getGroupByKeyExtraction() == null || aggDef.getGroupByKeyType() == null) {
                     throw new IllegalArgumentException("For AGGREGATION mode, 'groupByKeyExtraction' and 'groupByKeyType' must be provided for ID: " + aggDef.getId());
@@ -50,7 +60,7 @@ public class DynamicTopologyBuilder {
                 break;
             case SIMPLE_STREAM:
                 // Start with KStream from sourceTopic
-                finalOutputKStream = createKStreamFromTopicConfig(streamsBuilder, aggDef.getSourceTopic());
+                finalOutputKStream = kTableRegistry.createAndConfigureKStream(streamsBuilder, aggDef.getSourceTopic());
                 finalOutputKStream.peek((key, value) -> log.debug("Simple stream processing: key={}, value={}", key, value));
                 break;
             default:
@@ -62,27 +72,31 @@ public class DynamicTopologyBuilder {
             if (finalOutputKStream == null) {
                 throw new IllegalStateException("Final output stream is null for aggregation ID: " + aggDef.getId() + ". Cannot output to topic.");
             }
-            Pair<Serde<Object>, Serde<Object>> serdes = SerdeFactory.createSerdesFromTopicConfig(aggDef.getOutputTopic().toTopicConfig());
+//            Pair<Serde<Object>, Serde<Object>> serdes = SerdeFactory.createSerdesFromTopicConfig(aggDef.getOutputTopic().toTopicConfig());
+            // Default to Object.class for generic key/value handling, assuming JSON or similar structure.
+            // SerdeFactory should be configured to handle Object.class with appropriate JSON serdes.
+            Serde<Object> keySerde = SerdeFactory.createSerde(Object.class);
+            Serde<Object> valueSerde = SerdeFactory.createSerde(Object.class);
 
             log.info("Aggregation '{}' outputting to topic: {}", aggDef.getId(), aggDef.getOutputTopic().toTopicConfig().getName());
-            finalOutputKStream.to(
-                    aggDef.getOutputTopic().toTopicConfig().getName(),
-                    Produced.with(serdes.getLeft(), serdes.getRight())
-            );
+//            finalOutputKStream.to(
+//                    aggDef.getOutputTopic().toTopicConfig().getName(),
+//                    Produced.with(keySerde, valueSerde) // Use the default Object serde for both key and value
+//            );
+
+            finalOutputKStream.peek((key, value) -> {
+                try {
+                    String keyJson = objectMapper.writeValueAsString(key);
+                    String valueJson = objectMapper.writeValueAsString(value);
+                    log.info("Key: {}, Value: {}", keyJson, valueJson);
+                } catch (Exception e) {
+                    log.error("Failed to serialize key/value for aggregation ID '{}': {}", aggDef.getId(), e.getMessage());
+                }
+            });
+
         } else {
             log.info("Aggregation '{}' has no downstream output configured.", aggDef.getId());
         }
-    }
-
-    // define common function to create keySerde and valueSerde from TopicConfig
-
-
-    /**
-     * Helper method to create a KStream from a TopicConfig.
-     */
-    private KStream<Object, Object> createKStreamFromTopicConfig(StreamsBuilder streamsBuilder,  AggregationDefinition.TopicConfig topicConfig) {
-        Pair<Serde<Object>, Serde<Object>> serdes = SerdeFactory.createSerdesFromTopicConfig(topicConfig);
-        return streamsBuilder.stream(topicConfig.getName(), Consumed.with(serdes.getLeft(), serdes.getRight()));
     }
 
     /**
@@ -93,7 +107,8 @@ public class DynamicTopologyBuilder {
      */
     @SuppressWarnings("unchecked")
     private KStream<Object, Object> buildChainedJoin(StreamsBuilder streamsBuilder, AggregationDefinition aggDef) {
-        if (aggDef.getJoinOperations() == null || aggDef.getJoinOperations().isEmpty()) {
+        List<AggregationDefinition.JoinOperationConfig> joinOps = aggDef.getJoinOperations();
+        if (joinOps == null || joinOps.isEmpty()) {
             throw new IllegalArgumentException("For JOIN_CHAIN mode, 'joinOperations' must be provided and not empty for ID: " + aggDef.getId());
         }
         if (aggDef.getSourceTopic() == null) {
@@ -103,28 +118,18 @@ public class DynamicTopologyBuilder {
         log.info("Building chained join for aggregation ID: {}", aggDef.getId());
 
         // Get the first join operation to determine the initial source type
-        AggregationDefinition.JoinOperationConfig firstJoinOp = aggDef.getJoinOperations().get(0);
-
         KStream<Object, Object> currentKStream = null;
-        KTable<Object, Object> currentKTable = null; // Will hold the result if the chain is KTable-based
+        KTable<Object, Object> currentKTable = null;
 
-        // Determine the starting point of the chain: KStream or KTable
+        AggregationDefinition.JoinOperationConfig firstJoinOp = joinOps.get(0);
+
         if (firstJoinOp.isInitialSourceIsStream()) {
             log.info("Initial source for join chain is KStream from topic: {}", aggDef.getSourceTopic().getName());
-            currentKStream = createKStreamFromTopicConfig(streamsBuilder, aggDef.getSourceTopic());
-
-            if (firstJoinOp.getPrimaryKeyExtraction() != null) {
-                log.info("Applying primary key extractor for initial KStream in aggregation '{}' with config: {}",
-                        aggDef.getId(), firstJoinOp.getPrimaryKeyExtraction());
-                KeyValueMapper<Object, Object, Object> keyMapper =
-                        new DynamicPojoKeyExtractor<>(firstJoinOp.getPrimaryKeyExtraction());
-                currentKStream = currentKStream.selectKey(keyMapper);
-            }
+            currentKStream = kTableRegistry.createAndConfigureKStream(streamsBuilder, aggDef.getSourceTopic());
         } else {
             log.info("Initial source for join chain is KTable from topic: {}", aggDef.getSourceTopic().getName());
             currentKTable = kTableRegistry.getOrCreateKTable(streamsBuilder, aggDef.getSourceTopic());
         }
-
         // print currentKTable state for debugging
         if (currentKTable != null) {
             log.debug("Initial KTable state for aggregation ID '{}': {}", aggDef.getId(), currentKTable.toString());
@@ -133,8 +138,11 @@ public class DynamicTopologyBuilder {
         }
 
         // Iterate through all join operations
-        for (int i = 0; i < aggDef.getJoinOperations().size(); i++) {
-            AggregationDefinition.JoinOperationConfig joinOp = aggDef.getJoinOperations().get(i);
+        for (int i = 0; i < joinOps.size(); i++) {
+            AggregationDefinition.JoinOperationConfig joinOp = joinOps.get(i);
+            if (i == 0 && !joinOp.isInitialSourceIsStream()) {
+                continue;
+            }
             log.info("Applying join step {} ('{}') with enrichment topic '{}'",
                     (i + 1), joinOp.getId(), joinOp.getEnrichmentTopic().getName());
 
@@ -147,27 +155,24 @@ public class DynamicTopologyBuilder {
 
             // The V_OUT generic for ValueJoiner will now be Map<String, Object>
             ValueJoiner<Object, Object, Map<String, Object>> valueJoiner =
-                    new DynamicPojoValueJoiner<>(joinOp.getOutputFieldsMapping()); // Removed outputPojoClass parameter
+                    new DynamicPojoValueJoiner<>(joinOp.getOutputFieldsMapping());
 
             if (currentKStream != null) {
                 if (joinOp.getType() == AggregationDefinition.JoinType.LEFT_JOIN) {
-                    // Note: The KStream's value type will become Map<String, Object> here
-                    log.info("Performing LEFT JOIN on KStream with enrichment KTable for ID: {} and with map: {}", aggDef.getId(), valueJoiner.toString());
                     currentKStream = currentKStream.leftJoin(enrichmentKTable, valueJoiner)
-                            .mapValues((key, value) -> (Object) value); // Cast Map to Object for KStream<Object, Object>
-                } else {
+                            .mapValues((key, value) -> (Object) value);
+                } else { // INNER_JOIN
                     currentKStream = currentKStream.join(enrichmentKTable, valueJoiner)
-                            .mapValues((key, value) -> (Object) value); // Cast Map to Object for KStream<Object, Object>
+                            .mapValues((key, value) -> (Object) value);
                 }
                 log.debug("Current chain state after join step {}: KStream<Object, Map<String, Object>>", (i + 1)); // Log changed type
             } else if (currentKTable != null) {
                 if (joinOp.getType() == AggregationDefinition.JoinType.LEFT_JOIN) {
-                    // Note: The KTable's value type will become Map<String, Object> here
                     currentKTable = currentKTable.leftJoin(enrichmentKTable, valueJoiner)
-                            .mapValues(value -> (Object) value); // Cast Map to Object for KTable<Object, Object>
-                } else {
+                            .mapValues((key, value) -> (Object) value);
+                } else { // INNER_JOIN
                     currentKTable = currentKTable.join(enrichmentKTable, valueJoiner)
-                            .mapValues(value -> (Object) value); // Cast Map to Object for KTable<Object, Object>
+                            .mapValues((key, value) -> (Object) value);
                 }
                 log.debug("Current chain state after join step {}: KTable<Object, Map<String, Object>>", (i + 1)); // Log changed type
             } else {
@@ -185,40 +190,28 @@ public class DynamicTopologyBuilder {
         }
     }
 
-    private KStream<Object, Long> buildCountAggregation(KStream<Object, Object> primaryStream,
-                                                        AggregationDefinition aggDef,
-                                                        KeyValueMapper<Object, Object, Object> groupByKeyMapper) throws ClassNotFoundException {
-//        if (aggDef.getStateStoreName() == null || aggDef.getStateStoreName().trim().isEmpty()) {
-//            throw new IllegalArgumentException("stateStoreName must be provided for AGGREGATION mode for ID: " + aggDef.getId());
-//        }
-//
-//        Class<?> groupByKeyTypeClass;
-//        try {
-//            groupByKeyTypeClass = Class.forName(aggDef.getGroupByKeyType());
-//        } catch (ClassNotFoundException e) {
-//            log.error("Failed to find groupByKeyType class: {}", aggDef.getGroupByKeyType(), e);
-//            throw new RuntimeException("Failed to load groupByKeyType class", e);
-//        }
-//
-//        KGroupedStream<Object, Object> groupedStream = primaryStream
+    private KStream<Object, Long> buildCountAggregation(KStream<Object, Object> primaryStream, AggregationDefinition aggDef, KeyValueMapper<Object, Object, Object> groupByKeyMapper) {
+//        return primaryStream
 //                .selectKey(groupByKeyMapper)
-//                .groupByKey(Grouped.with(SerdeFactory.createSerde((Class<Object>) groupByKeyTypeClass),
-//                        SerdeFactory.createSerde((Class<Object>) Class.forName(aggDef.getSourceTopic().getValueClass()))));
-//
-////        KTable<Object, Object> aggregatedTable = groupedStream.count(
-////                Materialized.as(aggDef.getStateStoreName())
-////                        .withKeySerde(SerdeFactory.createSerde((Class<Object>) groupByKeyTypeClass))
-////                        .withValueSerde(SerdeFactory.createSerde(Long.class))
-////        );
-//
-//        KTable<Object, Long> aggregatedTable = groupedStream.count(
-//                // Explicitly define K and V types for Materialized to help type inference
-//                Materialized.as(aggDef.getStateStoreName())
-//                        .withKeySerde(SerdeFactory.createSerde((Class<Object>) groupByKeyTypeClass))
-//                        .withValueSerde(Serdes.Long())
-//        );
-//
-//        return aggregatedTable.toStream();
-        return null;
+//                .groupByKey(Grouped.with(SerdeFactory.createSerde((Class<Object>) safeGetClass(aggDef.getGroupByKeyType())), SerdeFactory.createSerde(Object.class)))
+//                .count(Materialized.<Object, Long>as(aggDef.getStateStoreName())
+//                        .withKeySerde(SerdeFactory.createSerde((Class<Object>) safeGetClass(aggDef.getGroupByKeyType())))
+//                        .withValueSerde(org.apache.kafka.common.serialization.Serdes.Long()))
+//                .toStream();
+        return null; // Placeholder for actual implementation
+    }
+
+
+
+    private Class<?> safeGetClass(String className) {
+        if (className == null) {
+            return null;
+        }
+        try {
+            return Class.forName(className);
+        } catch (ClassNotFoundException e) {
+            log.error("Class not found: {}", className, e);
+            throw new RuntimeException("Class not found: " + className, e);
+        }
     }
 }
