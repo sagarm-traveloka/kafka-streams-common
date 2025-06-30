@@ -31,7 +31,7 @@ public class KTableRegistry {
 
     public KTableRegistry() {
         this.objectMapper = new ObjectMapper();
-        this.objectMapper.configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false);
+//        this.objectMapper.configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false);
         this.objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false); // Ignore unknown fields in JSON
     }
 
@@ -143,6 +143,8 @@ public class KTableRegistry {
             // Instantiate and apply the DynamicPojoKeyExtractor
             DynamicPojoKeyExtractor<Object, Object> keyExtractor = new DynamicPojoKeyExtractor<>(topicConfig.getKeyFromValueExtractionConfig());
             return stream.selectKey(keyExtractor);
+//            return stream.selectKey(keyExtractor).toTable("some-repartition-topic", Produced.with(SerdeFactory.createSerde(Object.class), SerdeFactory.createSerde(Object.class)));
+
         } else {
             log.info("Topic '{}' does not have key extraction configured. Using existing Kafka message key.", topicConfig.getName());
             stream.peek((key, value) -> {
@@ -160,36 +162,42 @@ public class KTableRegistry {
 
     public KTable<Object, Object> getOrCreateKTable(StreamsBuilder streamsBuilder, AggregationDefinition.TopicConfig topicConfig) {
         // KTable is built from a KStream, then materialized.
-        KStream<Object, Object> stream = streamsBuilder.stream(
-                topicConfig.getName(),
-                Consumed.with(SerdeFactory.createSerde(Object.class), SerdeFactory.createSerde(Object.class))
-        );
+
 
         KStream<Object, Object> reKeyedStream;
         if (isKeyExtractionConfigured(topicConfig)) {
             log.info("Re-keying KStream for KTable topic '{}' using extractor: {}", topicConfig.getName(), topicConfig.getKeyFromValueExtractorClass());
+            KStream<Object, Object> stream = streamsBuilder.stream(
+                    topicConfig.getName(),
+                    Consumed.with(SerdeFactory.createSerde(Object.class), SerdeFactory.createSerde(Object.class))
+            );
             DynamicPojoKeyExtractor<Object, Object> keyExtractor = new DynamicPojoKeyExtractor<>(topicConfig.getKeyFromValueExtractionConfig());
             reKeyedStream = stream.selectKey(keyExtractor);
+            return reKeyedStream.toTable();
         } else {
             log.info("Topic '{}' does not have key extraction configured. Using existing Kafka message key for KTable source.", topicConfig.getName());
             log.info("======= Stream peek for KTable source: {}", topicConfig.getName());
-            stream.peek((key, value) -> {
-                try {
-                    String keyJson = objectMapper.writeValueAsString(key);
-                    String valueJson = objectMapper.writeValueAsString(value);
-                    log.info("Key: {}, Value: {}", keyJson, valueJson);
-                } catch (Exception e) {
-                    log.error("Failed to serialize key/value for topic '{}'", topicConfig.getName());
-                }
-            });
-            reKeyedStream = stream;
+//            stream.peek((key, value) -> {
+//                try {
+//                    String keyJson = objectMapper.writeValueAsString(key);
+//                    String valueJson = objectMapper.writeValueAsString(value);
+//                    log.info("Key: {}, Value: {}", keyJson, valueJson);
+//                } catch (Exception e) {
+//                    log.error("Failed to serialize key/value for topic '{}'", topicConfig.getName());
+//                }
+//            });
+//            reKeyedStream = stream;
+            return streamsBuilder.table(topicConfig.getName(),
+                    Consumed.with(SerdeFactory.createSerde(Object.class), SerdeFactory.createSerde(Object.class))
+            );
         }
 
         // Materialize the re-keyed stream into a KTable
-        String stateStoreName = topicConfig.getName() + "-ktable-store"; // Example: derive a unique store name
-        log.info("Materializing KTable for topic '{}' into state store '{}'", topicConfig.getName(), stateStoreName);
+//        String stateStoreName = topicConfig.getName() + "-ktable-store"; // Example: derive a unique store name
+//        log.info("Materializing KTable for topic '{}' into state store '{}'", topicConfig.getName(), stateStoreName);
 
-        return reKeyedStream.toTable(Materialized.with(SerdeFactory.createSerde(Object.class), SerdeFactory.createSerde(Object.class)));
+//        return reKeyedStream.toTable();
+//        return reKeyedStream.toTable(Materialized.with(SerdeFactory.createSerde(Object.class), SerdeFactory.createSerde(Object.class)));
 //        return reKeyedStream.toTable(
 //                Materialized.as(stateStoreName)
 //                        .withKeySerde(SerdeFactory.createSerde(Object.class)) // Keys are Objects (Maps)

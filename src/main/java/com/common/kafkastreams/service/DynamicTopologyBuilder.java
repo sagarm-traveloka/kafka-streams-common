@@ -84,11 +84,12 @@ public class DynamicTopologyBuilder {
 //                    Produced.with(keySerde, valueSerde) // Use the default Object serde for both key and value
 //            );
 
+            log.info("Final output stream for aggregation ID '{}' has been sent to topic '{}'.", aggDef.getId(), aggDef.getOutputTopic().toTopicConfig().getName());
             finalOutputKStream.peek((key, value) -> {
                 try {
                     String keyJson = objectMapper.writeValueAsString(key);
                     String valueJson = objectMapper.writeValueAsString(value);
-                    log.info("Key: {}, Value: {}", keyJson, valueJson);
+                    log.info("Final output => Key: {}, Value: {}", keyJson, valueJson);
                 } catch (Exception e) {
                     log.error("Failed to serialize key/value for aggregation ID '{}': {}", aggDef.getId(), e.getMessage());
                 }
@@ -158,12 +159,17 @@ public class DynamicTopologyBuilder {
                     new DynamicPojoValueJoiner<>(joinOp.getOutputFieldsMapping());
 
             if (currentKStream != null) {
-                if (joinOp.getType() == AggregationDefinition.JoinType.LEFT_JOIN) {
-                    currentKStream = currentKStream.leftJoin(enrichmentKTable, valueJoiner)
-                            .mapValues((key, value) -> (Object) value);
-                } else { // INNER_JOIN
-                    currentKStream = currentKStream.join(enrichmentKTable, valueJoiner)
-                            .mapValues((key, value) -> (Object) value);
+                try {
+                    if (joinOp.getType() == AggregationDefinition.JoinType.LEFT_JOIN) {
+                        currentKStream = currentKStream.leftJoin(enrichmentKTable, valueJoiner);
+//                            .mapValues((key, value) -> (Object) value);
+                    } else { // INNER_JOIN
+                        currentKStream = currentKStream.join(enrichmentKTable, valueJoiner)
+                                .mapValues((key, value) -> (Object) value);
+                    }
+                } catch (Exception e) {
+                    log.error("Error during join operation {}: {}", joinOp.getId(), e.getMessage());
+                    throw new RuntimeException("Failed to apply join operation: " + joinOp.getId(), e);
                 }
                 log.debug("Current chain state after join step {}: KStream<Object, Map<String, Object>>", (i + 1)); // Log changed type
             } else if (currentKTable != null) {

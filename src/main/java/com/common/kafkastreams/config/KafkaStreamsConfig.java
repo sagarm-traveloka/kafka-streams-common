@@ -1,6 +1,7 @@
 package com.common.kafkastreams.config;
 
 
+import com.common.kafkastreams.serdes.JsonSerde;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.Serdes;
@@ -40,8 +41,14 @@ public class KafkaStreamsConfig {
         Map<String, Object> props = new HashMap<>();
         props.put(StreamsConfig.APPLICATION_ID_CONFIG, applicationId);
         props.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092"); // Get from application.yml if preferred
-        props.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.String().getClass().getName());
-        props.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, Serdes.String().getClass().getName());
+//        props.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.String().getClass().getName());
+//        props.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, Serdes.String().getClass().getName());
+        // --- CRUCIAL CHANGE HERE ---
+        // Set the default key and value Serdes to your JsonSerde for Objects.
+        // JsonSerde handles LinkedHashMap (and other POJOs) by converting them to/from JSON strings.
+        props.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, JsonSerde.class.getName());
+        props.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, JsonSerde.class.getName());
+
         props.put(ConsumerConfig.ENABLE_METRICS_PUSH_CONFIG, "false"); // Disable metrics push to avoid conflicts with Spring Boot's metrics
         return props;
     }

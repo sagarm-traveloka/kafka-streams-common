@@ -53,6 +53,7 @@ public class DynamicPojoKeyExtractor<K, V> implements KeyValueMapper<K, V, Objec
             return null; // Or throw an exception, depending on desired behavior for null values
         }
 
+        log.info("DynamicPojoKeyExtractor: Applying DynamicPojoKeyExtractor with key: {}, value: {}", key, value);
         // Convert value to JsonNode for flexible path extraction
         JsonNode valueNode;
         if (value instanceof JsonNode) {
@@ -65,6 +66,7 @@ public class DynamicPojoKeyExtractor<K, V> implements KeyValueMapper<K, V, Objec
         ObjectNode newKeyNode = objectMapper.createObjectNode();
 
         // Iterate through the configured mappings
+        log.info("DynamicPojoKeyExtractor: Processing key extraction configuration: {}", configJsonNode.toPrettyString());
         Iterator<Map.Entry<String, JsonNode>> fields = configJsonNode.fields();
         while (fields.hasNext()) {
             Map.Entry<String, JsonNode> entry = fields.next();
@@ -79,19 +81,20 @@ public class DynamicPojoKeyExtractor<K, V> implements KeyValueMapper<K, V, Objec
                 if (extractedValue != null && !extractedValue.isNull()) {
                     newKeyNode.set(outputFieldName, extractedValue);
                 } else {
-                    log.warn("Value not found for JSON path '{}' in input value for key field '{}'. Value: {}",
+                    log.info("Value not found for JSON path '{}' in input value for key field '{}'. Value: {}",
                             jsonPath, outputFieldName, valueNode.toPrettyString());
                     // Decide whether to include null, or skip the field, or throw error
                     // For now, it will be skipped if not found or null.
                 }
             } else {
-                log.warn("Unsupported JSON path format '{}' for key field '{}'. Only '$.fieldName' is currently supported directly. Value: {}",
+                log.info("Unsupported JSON path format '{}' for key field '{}'. Only '$.fieldName' is currently supported directly. Value: {}",
                         jsonPath, outputFieldName, valueNode.toPrettyString());
                 // Handle unsupported path formats, e.g., by skipping or throwing an error
             }
         }
 
         // Return the new composite key as a Map (which ObjectMappers often handle for JsonNode)
+        log.info("DynamicPojoKeyExtractor: Extracted new key: {}", newKeyNode.toPrettyString());
         return objectMapper.convertValue(newKeyNode, Map.class);
     }
 }
